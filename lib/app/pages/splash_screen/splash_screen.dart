@@ -84,7 +84,7 @@ class _SplashScreenState extends State<SplashScreen>
                           width: 80,
                         ),
                         AnimatedOpacity(
-                          duration: const Duration(seconds: 1),
+                          duration: Duration(seconds: 1),
                           opacity: value,
                           child: SizedBox(
                             height: Tween<double>(
