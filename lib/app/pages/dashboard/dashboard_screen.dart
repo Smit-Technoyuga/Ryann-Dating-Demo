@@ -126,9 +126,7 @@ class DashboardScreen extends StatelessWidget {
         imagePath: isSelected ? activeIcon : icon,
         height: 24.w,
         width: 24.w,
-        // color: isSelected ? AppColors.primaryColor : AppColors.textLightColor,
       ),
-      label: '',
     );
   }
 

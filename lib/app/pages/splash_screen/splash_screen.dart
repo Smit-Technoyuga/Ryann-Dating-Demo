@@ -55,8 +55,6 @@ class _SplashScreenState extends State<SplashScreen>
               children: [
                 Positioned(
                   top: 0,
-                  // left: 0,
-                  // right: 0,
                   child: ValueListenableBuilder(
                     valueListenable: _animationController!,
                     builder: (context, value, child) => AnimatedOpacity(
