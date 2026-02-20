@@ -52,11 +52,11 @@ Now review the following code:`;
 async function reviewCode() {
   try {
     console.log('🤖 Starting AI Code Review...');
-    
+
     // Read GitHub event data
     const eventPath = process.env.GITHUB_EVENT_PATH;
     const event = JSON.parse(fs.readFileSync(eventPath, 'utf8'));
-    
+
     const { pull_request, repository } = event;
     const owner = repository.owner.login;
     const repo = repository.name;
@@ -74,7 +74,7 @@ async function reviewCode() {
     console.log(`📁 Found ${files.length} changed files`);
 
     // Filter code files only
-    const codeFiles = files.filter(file => 
+    const codeFiles = files.filter(file =>
       file.filename.match(/\.(dart|js|jsx|ts|tsx|java|kt|py)$/) &&
       file.status !== 'removed' &&
       file.changes < 500 // Skip very large files
@@ -96,7 +96,7 @@ async function reviewCode() {
     // Get file contents (limit to first 5 files to avoid token limits)
     let reviewContent = '\n\n';
     const filesToReview = codeFiles.slice(0, 5);
-    
+
     for (const file of filesToReview) {
       try {
         const { data: content } = await octokit.repos.getContent({
@@ -105,11 +105,11 @@ async function reviewCode() {
           path: file.filename,
           ref: pull_request.head.sha,
         });
-        
+
         if (content.content) {
           const code = Buffer.from(content.content, 'base64').toString();
           const lines = code.split('\n').length;
-          
+
           reviewContent += `\n## 📄 File: ${file.filename} (${lines} lines, ${file.changes} changes)\n\n`;
           reviewContent += '```' + getLanguage(file.filename) + '\n';
           reviewContent += code;
@@ -126,14 +126,14 @@ async function reviewCode() {
 
     // Send to AI for review
     console.log('🧠 Sending to Google AI for analysis...');
-    
+
     // ✅ FIXED MODEL INITIALIZATION
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-pro"
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash-latest"  // આ વાપરો
     });
 
     const fullPrompt = SYSTEM_PROMPT + reviewContent;
-    
+
     const result = await model.generateContent(fullPrompt);
     const response = await result.response;
     const aiReview = response.text();
@@ -153,12 +153,12 @@ async function reviewCode() {
   } catch (error) {
     console.error('❌ Error during review:', error.message);
     console.error(error);
-    
+
     // Try to post error to PR
     try {
       const eventPath = process.env.GITHUB_EVENT_PATH;
       const event = JSON.parse(fs.readFileSync(eventPath, 'utf8'));
-      
+
       await octokit.issues.createComment({
         owner: event.repository.owner.login,
         repo: event.repository.name,
