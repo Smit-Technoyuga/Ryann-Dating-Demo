@@ -2,7 +2,7 @@ name: AI Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
 
 jobs:
   ai-review:
@@ -14,14 +14,86 @@ jobs:
         with:
           fetch-depth: 0
       
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v40
-        
-      - name: AI Code Review
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      
+      - name: Run AI Code Review
         env:
           GOOGLE_AI_KEY: ${{ secrets.GOOGLE_AI_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npm install -g @google/generative-ai
-          node .github/scripts/ai-review.js
+          npm install @google/generative-ai @octokit/rest
+          node << 'SCRIPT'
+          const { GoogleGenerativeAI } = require("@google/generative-ai");
+          const { Octokit } = require("@octokit/rest");
+          const fs = require('fs');
+
+          const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_KEY);
+          const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+
+          const SYSTEM_PROMPT = \`You are an expert code reviewer.
+          Review this code and provide feedback in markdown format with:
+          - Overall score (1-10)
+          - Critical issues
+          - Warnings
+          - Suggestions
+          Use emojis and clear formatting.\`;
+
+          async function reviewCode() {
+            try {
+              const context = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+              const { pull_request, repository } = context;
+              
+              const { data: files } = await octokit.pulls.listFiles({
+                owner: repository.owner.login,
+                repo: repository.name,
+                pull_number: pull_request.number,
+              });
+
+              const codeFiles = files.filter(f => 
+                f.filename.match(/\.(dart|js|jsx|ts|tsx)$/) && 
+                f.status !== 'removed'
+              ).slice(0, 3);
+
+              if (codeFiles.length === 0) {
+                console.log('No code files to review');
+                return;
+              }
+
+              let code = '';
+              for (const file of codeFiles) {
+                const { data } = await octokit.repos.getContent({
+                  owner: repository.owner.login,
+                  repo: repository.name,
+                  path: file.filename,
+                  ref: pull_request.head.sha,
+                });
+                code += \`\n--- ${file.filename} ---\n\${Buffer.from(data.content, 'base64').toString()}\`;
+              }
+
+              const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                systemInstruction: SYSTEM_PROMPT
+              });
+
+              const result = await model.generateContent("Review this code:\n" + code);
+              const review = result.response.text();
+
+              await octokit.issues.createComment({
+                owner: repository.owner.login,
+                repo: repository.name,
+                issue_number: pull_request.number,
+                body: "### 🤖 AI Code Review\n\n" + review,
+              });
+
+              console.log('✅ Review posted');
+            } catch (error) {
+              console.error('Error:', error);
+              process.exit(1);
+            }
+          }
+
+          reviewCode();
+          SCRIPT
