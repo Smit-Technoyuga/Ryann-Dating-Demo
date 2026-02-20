@@ -1,12 +1,12 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Groq = require("groq-sdk");
 const { Octokit } = require("@octokit/rest");
 const fs = require('fs');
 
 // Initialize
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
-// ✅ FIX 1: getLanguage function added
+// Language detector
 function getLanguage(filename) {
   const ext = filename.split('.').pop().toLowerCase();
   const map = {
@@ -70,9 +70,7 @@ OUTPUT FORMAT for GitHub (use markdown):
 **Recommendation:** APPROVE / REQUEST CHANGES / REJECT
 
 ---
-*Powered by Google Gemini AI*
-
-Now review the following code:`;
+*Powered by Groq AI (Llama 3.3 70B)*`;
 
 async function reviewCode() {
   try {
@@ -98,7 +96,7 @@ async function reviewCode() {
 
     console.log(`📁 Found ${files.length} changed files`);
 
-    // Filter code files only
+    // Filter code files
     const codeFiles = files.filter(file =>
       file.filename.match(/\.(dart|js|jsx|ts|tsx|java|kt|py|swift|go|c|cpp|cs|json|yaml|yml)$/) &&
       file.status !== 'removed' &&
@@ -118,8 +116,8 @@ async function reviewCode() {
 
     console.log(`🔍 Reviewing ${codeFiles.length} code files...`);
 
-    // Get file contents (limit to first 5 files to avoid token limits)
-    let reviewContent = '\n\n';
+    // Get file contents (limit to first 5 files)
+    let reviewContent = '\n\nReview the following code files:\n\n';
     const filesToReview = codeFiles.slice(0, 5);
 
     for (const file of filesToReview) {
@@ -149,19 +147,30 @@ async function reviewCode() {
       reviewContent += `\n\n_Note: Reviewed ${filesToReview.length} of ${codeFiles.length} files (limited for performance)_\n`;
     }
 
-    // Send to AI for review
-    console.log('🧠 Sending to Google AI for analysis...');
+    // Send to Groq AI for review
+    console.log('🧠 Sending to Groq AI for analysis...');
 
-    // ✅ FIX 2: Correct model name
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash"
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: reviewContent,
+        },
+      ],
+      model: "llama-3.3-70b-versatile",
+      max_tokens: 4096,
+      temperature: 0.3,
     });
 
-    const fullPrompt = SYSTEM_PROMPT + reviewContent;
+    const aiReview = chatCompletion.choices[0]?.message?.content;
 
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    const aiReview = response.text();
+    if (!aiReview) {
+      throw new Error('No response from Groq AI');
+    }
 
     console.log('✅ AI Review generated');
 
@@ -196,5 +205,4 @@ async function reviewCode() {
   }
 }
 
-// ✅ FIX 3: Function call added
 reviewCode();
