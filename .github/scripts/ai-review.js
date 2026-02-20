@@ -6,6 +6,31 @@ const fs = require('fs');
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_KEY);
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
+// ✅ FIX 1: getLanguage function added
+function getLanguage(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const map = {
+    'dart': 'dart',
+    'js': 'javascript',
+    'jsx': 'jsx',
+    'ts': 'typescript',
+    'tsx': 'tsx',
+    'py': 'python',
+    'java': 'java',
+    'kt': 'kotlin',
+    'swift': 'swift',
+    'json': 'json',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'md': 'markdown',
+    'go': 'go',
+    'c': 'c',
+    'cpp': 'cpp',
+    'cs': 'csharp',
+  };
+  return map[ext] || '';
+}
+
 const SYSTEM_PROMPT = `You are an expert Flutter/Node.js/React code reviewer for a software company.
 
 YOUR ROLE:
@@ -75,9 +100,9 @@ async function reviewCode() {
 
     // Filter code files only
     const codeFiles = files.filter(file =>
-      file.filename.match(/\.(dart|js|jsx|ts|tsx|java|kt|py)$/) &&
+      file.filename.match(/\.(dart|js|jsx|ts|tsx|java|kt|py|swift|go|c|cpp|cs|json|yaml|yml)$/) &&
       file.status !== 'removed' &&
-      file.changes < 500 // Skip very large files
+      file.changes < 1000
     );
 
     if (codeFiles.length === 0) {
@@ -127,9 +152,9 @@ async function reviewCode() {
     // Send to AI for review
     console.log('🧠 Sending to Google AI for analysis...');
 
-    // ✅ FIXED MODEL INITIALIZATION
+    // ✅ FIX 2: Correct model name
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash-latest"  // આ વાપરો
+      model: "gemini-2.0-flash"
     });
 
     const fullPrompt = SYSTEM_PROMPT + reviewContent;
@@ -171,4 +196,5 @@ async function reviewCode() {
   }
 }
 
+// ✅ FIX 3: Function call added
 reviewCode();
