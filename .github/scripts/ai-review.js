@@ -45,7 +45,9 @@ OUTPUT FORMAT for GitHub (use markdown):
 **Recommendation:** APPROVE / REQUEST CHANGES / REJECT
 
 ---
-*Powered by Google Gemini AI*`;
+*Powered by Google Gemini AI*
+
+Now review the following code:`;
 
 async function reviewCode() {
   try {
@@ -92,7 +94,7 @@ async function reviewCode() {
     console.log(`🔍 Reviewing ${codeFiles.length} code files...`);
 
     // Get file contents (limit to first 5 files to avoid token limits)
-    let reviewContent = '# Files to Review:\n\n';
+    let reviewContent = '\n\n';
     const filesToReview = codeFiles.slice(0, 5);
     
     for (const file of filesToReview) {
@@ -108,7 +110,7 @@ async function reviewCode() {
           const code = Buffer.from(content.content, 'base64').toString();
           const lines = code.split('\n').length;
           
-          reviewContent += `\n## 📄 ${file.filename} (${lines} lines, ${file.changes} changes)\n\n`;
+          reviewContent += `\n## 📄 File: ${file.filename} (${lines} lines, ${file.changes} changes)\n\n`;
           reviewContent += '```' + getLanguage(file.filename) + '\n';
           reviewContent += code;
           reviewContent += '\n```\n';
@@ -125,17 +127,16 @@ async function reviewCode() {
     // Send to AI for review
     console.log('🧠 Sending to Google AI for analysis...');
     
+    // ✅ FIXED MODEL INITIALIZATION
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      systemInstruction: SYSTEM_PROMPT,
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 2048,
-      }
+      model: "gemini-pro"
     });
 
-    const result = await model.generateContent(reviewContent);
-    const aiReview = result.response.text();
+    const fullPrompt = SYSTEM_PROMPT + reviewContent;
+    
+    const result = await model.generateContent(fullPrompt);
+    const response = await result.response;
+    const aiReview = response.text();
 
     console.log('✅ AI Review generated');
 
@@ -167,26 +168,5 @@ async function reviewCode() {
     } catch (e) {
       console.error('Could not post error comment:', e.message);
     }
-    
-    process.exit(1);
   }
 }
-
-// Helper function to detect language for syntax highlighting
-function getLanguage(filename) {
-  const ext = filename.split('.').pop();
-  const langMap = {
-    'dart': 'dart',
-    'js': 'javascript',
-    'jsx': 'javascript',
-    'ts': 'typescript',
-    'tsx': 'typescript',
-    'java': 'java',
-    'kt': 'kotlin',
-    'py': 'python'
-  };
-  return langMap[ext] || '';
-}
-
-// Run the review
-reviewCode();
