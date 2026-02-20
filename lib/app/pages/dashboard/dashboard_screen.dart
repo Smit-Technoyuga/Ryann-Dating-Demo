@@ -134,7 +134,7 @@ class DashboardScreen extends StatelessWidget {
     return Center(
       child: Text(
         text,
-        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
       ),
     );
   }
