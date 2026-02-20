@@ -1,5 +1,6 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { Octokit } from "@octokit/rest";
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { Octokit } = require("@octokit/rest");
+const fs = require('fs');
 
 // Initialize
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_KEY);
@@ -44,16 +45,20 @@ OUTPUT FORMAT for GitHub (use markdown):
 **Recommendation:** APPROVE / REQUEST CHANGES / REJECT
 
 ---
-*AI Code Review powered by Google Gemini*`;
+*Powered by Google Gemini AI*`;
 
 async function reviewCode() {
   try {
     console.log('🤖 Starting AI Code Review...');
     
-    const owner = process.env.REPO_OWNER;
-    const repo = process.env.REPO_NAME;
-    const pullNumber = parseInt(process.env.PR_NUMBER);
-    const headSha = process.env.PR_HEAD_SHA;
+    // Read GitHub event data
+    const eventPath = process.env.GITHUB_EVENT_PATH;
+    const event = JSON.parse(fs.readFileSync(eventPath, 'utf8'));
+    
+    const { pull_request, repository } = event;
+    const owner = repository.owner.login;
+    const repo = repository.name;
+    const pullNumber = pull_request.number;
 
     console.log(`📋 Reviewing PR #${pullNumber} in ${owner}/${repo}`);
 
@@ -68,43 +73,53 @@ async function reviewCode() {
 
     // Filter code files only
     const codeFiles = files.filter(file => 
-      file.filename.match(/\.(dart|js|jsx|ts|tsx|java|kt)$/) &&
+      file.filename.match(/\.(dart|js|jsx|ts|tsx|java|kt|py)$/) &&
       file.status !== 'removed' &&
       file.changes < 500 // Skip very large files
     );
 
     if (codeFiles.length === 0) {
-      console.log('✅ No code files to review (or all files too large)');
+      console.log('✅ No code files to review');
       await octokit.issues.createComment({
         owner,
         repo,
         issue_number: pullNumber,
-        body: '### 🤖 AI Code Review\n\n✅ No reviewable code files found in this PR.',
+        body: '### 🤖 AI Code Review\n\n✅ No reviewable code files found in this PR (or all files are too large).',
       });
       return;
     }
 
     console.log(`🔍 Reviewing ${codeFiles.length} code files...`);
 
-    // Get file contents
-    let reviewContent = '# Code Review Request\n\n';
+    // Get file contents (limit to first 5 files to avoid token limits)
+    let reviewContent = '# Files to Review:\n\n';
+    const filesToReview = codeFiles.slice(0, 5);
     
-    for (const file of codeFiles.slice(0, 5)) { // Limit to 5 files
+    for (const file of filesToReview) {
       try {
         const { data: content } = await octokit.repos.getContent({
           owner,
           repo,
           path: file.filename,
-          ref: headSha,
+          ref: pull_request.head.sha,
         });
         
         if (content.content) {
           const code = Buffer.from(content.content, 'base64').toString();
-          reviewContent += `\n## File: ${file.filename}\n\`\`\`\n${code}\n\`\`\`\n`;
+          const lines = code.split('\n').length;
+          
+          reviewContent += `\n## 📄 ${file.filename} (${lines} lines, ${file.changes} changes)\n\n`;
+          reviewContent += '```' + getLanguage(file.filename) + '\n';
+          reviewContent += code;
+          reviewContent += '\n```\n';
         }
       } catch (error) {
-        console.log(`⚠️ Could not fetch content for ${file.filename}`);
+        console.log(`⚠️  Could not fetch: ${file.filename} - ${error.message}`);
       }
+    }
+
+    if (filesToReview.length < codeFiles.length) {
+      reviewContent += `\n\n_Note: Reviewed ${filesToReview.length} of ${codeFiles.length} files (limited for performance)_\n`;
     }
 
     // Send to AI for review
@@ -122,7 +137,7 @@ async function reviewCode() {
     const result = await model.generateContent(reviewContent);
     const aiReview = result.response.text();
 
-    console.log('✅ AI Review generated successfully');
+    console.log('✅ AI Review generated');
 
     // Post comment on PR
     await octokit.issues.createComment({
@@ -132,19 +147,22 @@ async function reviewCode() {
       body: aiReview,
     });
 
-    console.log('✅ AI Review posted to PR');
-    console.log('\n' + aiReview);
+    console.log('✅ Review posted to PR successfully!');
 
   } catch (error) {
-    console.error('❌ Error:', error.message);
+    console.error('❌ Error during review:', error.message);
+    console.error(error);
     
-    // Post error comment to PR
+    // Try to post error to PR
     try {
+      const eventPath = process.env.GITHUB_EVENT_PATH;
+      const event = JSON.parse(fs.readFileSync(eventPath, 'utf8'));
+      
       await octokit.issues.createComment({
-        owner: process.env.REPO_OWNER,
-        repo: process.env.REPO_NAME,
-        issue_number: parseInt(process.env.PR_NUMBER),
-        body: '### 🤖 AI Code Review\n\n❌ An error occurred during AI review. Please check the GitHub Actions logs.',
+        owner: event.repository.owner.login,
+        repo: event.repository.name,
+        issue_number: event.pull_request.number,
+        body: `### 🤖 AI Code Review\n\n❌ **Error occurred during review**\n\n\`\`\`\n${error.message}\n\`\`\`\n\nPlease check the [GitHub Actions logs](https://github.com/${event.repository.owner.login}/${event.repository.name}/actions) for details.`,
       });
     } catch (e) {
       console.error('Could not post error comment:', e.message);
@@ -154,4 +172,21 @@ async function reviewCode() {
   }
 }
 
+// Helper function to detect language for syntax highlighting
+function getLanguage(filename) {
+  const ext = filename.split('.').pop();
+  const langMap = {
+    'dart': 'dart',
+    'js': 'javascript',
+    'jsx': 'javascript',
+    'ts': 'typescript',
+    'tsx': 'typescript',
+    'java': 'java',
+    'kt': 'kotlin',
+    'py': 'python'
+  };
+  return langMap[ext] || '';
+}
+
+// Run the review
 reviewCode();
