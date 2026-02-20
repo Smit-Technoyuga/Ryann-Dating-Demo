@@ -170,3 +170,5 @@ async function reviewCode() {
     }
   }
 }
+
+reviewCode();
